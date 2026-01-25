@@ -1,0 +1,40 @@
+{
+  "placeholderImages": [
+    {
+      "id": "profile-picture",
+      "description": "A portrait of Gomezgani Shaba",
+      "imageUrl": "/profile-picture.jpg",
+      "imageHint": "profile portrait"
+    },
+    {
+      "id": "project-1",
+      "description": "A mobile application showing a schedule or timetable.",
+      "imageUrl": "https://images.unsplash.com/photo-1589149024922-32881b0a3899?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHx0aW1ldGFibGV8ZW58MHx8fHwxNzE2NDk2MTUwfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "timetable app"
+    },
+    {
+      "id": "project-2",
+      "description": "A dashboard showing financial charts and graphs for budgeting.",
+      "imageUrl": "https://images.unsplash.com/photo-1642427749670-f20e2e76f8c8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxtb25leSUyMHRyYWNrZXJ8ZW58MHx8fHwxNzE2NDk2MjA3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "finance dashboard"
+    },
+    {
+      "id": "project-3",
+      "description": "A secure login screen for a course management application.",
+      "imageUrl": "https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxzZWN1cmUlMjBhcGl8ZW58MHx8fHwxNzE2NDk2MjQyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "secure api"
+    },
+    {
+      "id": "project-4",
+      "description": "An abstract image representing cybersecurity and voting.",
+      "imageUrl": "https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxzZWN1cml0eXxlbnwwfHx8fDE3NjkzMDM0NjF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "voting security"
+    },
+    {
+      "id": "project-5",
+      "description": "A computer screen showing data analysis graphs and code.",
+      "imageUrl": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxkYXRhJTIwYW5hbHlzaXN8ZW58MHx8fHwxNzY5MzAzNTExfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "data analysis"
+    }
+  ]
+}
