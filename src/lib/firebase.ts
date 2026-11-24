@@ -7,25 +7,25 @@ import { getRemoteConfig } from 'firebase/remote-config';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getAI, GoogleAIBackend } from 'firebase/ai';
 
+// Provided Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyDihaDLm5eDv7KKNedLNbKe2i-eWFr14MY",
+  authDomain: "studio-9343992032-15548.firebaseapp.com",
+  projectId: "studio-9343992032-15548",
+  storageBucket: "studio-9343992032-15548.firebasestorage.app",
+  messagingSenderId: "12992098294",
+  appId: "1:12992098294:web:57ec36379e0a320c5861d7"
 };
 
-// Initialize variables as null/any to prevent module import crashes when config is missing
+// Initialize variables as null to prevent crashes when config is missing or invalid
 let app: any = null;
 let auth: any = null;
 let db: any = null;
 let remoteConfig: any = null;
 let ai: any = null;
 
-// Only initialize Firebase if we have an API key. 
-// This allows the "Graceful Sandbox Guard" in page.tsx to render a setup UI instead of the app crashing on load.
-if (firebaseConfig.apiKey) {
+// Only initialize Firebase if we have a valid configuration
+if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "your_key") {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
   auth = getAuth(app);
   db = initializeFirestore(app, {
@@ -41,14 +41,11 @@ if (firebaseConfig.apiKey) {
       max_on_device_chars: 12000
     };
 
-    // App Check setup
-    if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN) {
-      (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN;
-    }
-    
+    // App Check setup - ReCaptcha Enterprise (using a fallback if site key missing)
     try {
+      const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY || "6Lc-b5cqAAAAAK45Vz3S9PTBYIRCoc_j8lgKZo2Qk";
       initializeAppCheck(app, {
-        provider: new ReCaptchaEnterpriseProvider(process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY || "dev-placeholder"),
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
         isTokenAutoRefreshEnabled: true
       });
     } catch (e) {
@@ -56,6 +53,7 @@ if (firebaseConfig.apiKey) {
     }
   }
 
+  // Initialize Firebase AI with App Check protection enabled
   ai = getAI(app, { 
     backend: new GoogleAIBackend(), 
     useLimitedUseAppCheckTokens: true 
