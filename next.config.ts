@@ -1,7 +1,7 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export',
+  // Removing output: 'export' to ensure compatibility with standard Next.js dev servers
   typescript: {
     ignoreBuildErrors: true,
   },

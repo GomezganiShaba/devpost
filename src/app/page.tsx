@@ -47,11 +47,13 @@ export default function WorkspacePage() {
     onAuthStateChanged(auth, (u) => setUser(u));
     
     setIsOnline(navigator.onLine);
-    window.addEventListener('online', () => setIsOnline(true));
-    window.addEventListener('offline', () => setIsOnline(false));
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     if (remoteConfig) {
-      fetchAndActivate(remoteConfig).catch(console.error);
+      fetchAndActivate(remoteConfig).catch(() => {});
     }
 
     // Probe Nano
@@ -69,6 +71,11 @@ export default function WorkspacePage() {
       }
     };
     checkNano();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -122,7 +129,13 @@ export default function WorkspacePage() {
       const fallback = remoteConfig ? getValue(remoteConfig, 'cloud_fallback_model').asString() : "gemini-3.5-flash-lite";
       const result = await runOfflineLocalTask(rawText, "Summarize this securely", fallback);
       toast({ title: "Offline Summary Complete", description: "All logic ran locally." });
-      setCloudResult({ rehydratedResponse: result.response, inferenceSource: result.inferenceSource, modelUsed: "local-nano", durationMs: result.durationMs });
+      setCloudResult({ 
+        rehydratedResponse: result.response, 
+        sanitizedResponse: "Ran entirely offline - no sanitized version sent to cloud.",
+        inferenceSource: result.inferenceSource, 
+        modelUsed: "local-nano", 
+        durationMs: result.durationMs 
+      });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Local AI Error", description: e.message });
     } finally {
@@ -130,9 +143,9 @@ export default function WorkspacePage() {
     }
   };
 
-  if (!import.meta.env.VITE_FIREBASE_API_KEY) {
+  if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-6">
+      <div className="flex items-center justify-center min-h-screen p-6 bg-slate-950">
         <Card className="max-w-md border-amber-500/50 bg-amber-950/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-amber-500">
@@ -140,13 +153,16 @@ export default function WorkspacePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-amber-200/70">
+            <p className="text-sm text-amber-200/70 leading-relaxed">
               CloakRelay requires Firebase environment variables to initialize. Please copy <code className="bg-amber-900/40 px-1">.env.example</code> to <code className="bg-amber-900/40 px-1">.env.local</code> and fill in your project credentials.
             </p>
-            <div className="text-xs font-mono bg-black/40 p-3 rounded overflow-x-auto text-amber-500">
-              VITE_FIREBASE_API_KEY=your_key<br/>
-              VITE_FIREBASE_PROJECT_ID=your_id
+            <div className="text-xs font-mono bg-black/40 p-3 rounded overflow-x-auto text-amber-500 space-y-1">
+              NEXT_PUBLIC_FIREBASE_API_KEY=your_key<br/>
+              NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_id
             </div>
+            <p className="text-[10px] text-amber-500/60 italic">
+              Note: Using NEXT_PUBLIC_ prefix for Next.js environment compatibility.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -154,10 +170,10 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen text-slate-200">
+    <div className="flex flex-col min-h-screen text-slate-200 bg-slate-950">
       {/* Telemetry Header */}
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-        <div className="container flex h-16 items-center justify-between px-4">
+        <div className="container flex h-16 items-center justify-between px-4 mx-auto">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
               <ShieldCheck className="text-accent h-6 w-6" />
@@ -177,10 +193,18 @@ export default function WorkspacePage() {
             {!user ? (
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => signInAnonymously(auth)}>Guest</Button>
-                <Button size="sm" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>Sign In</Button>
+                <Button size="sm" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-accent hover:bg-accent/90 text-white">Sign In</Button>
               </div>
             ) : (
               <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-full overflow-hidden border border-slate-800 bg-slate-900 flex items-center justify-center relative">
+                  {/* Using standard img tag to bypass next/image domain restrictions for dynamic avatar URLs */}
+                  <img 
+                    src={user.photoURL || "https://picsum.photos/seed/avatar/32/32"} 
+                    alt="Profile" 
+                    className="h-full w-full object-cover"
+                  />
+                </div>
                 <span className="text-xs text-slate-400 hidden lg:inline">{user.email || 'Guest Session'}</span>
                 <Button variant="ghost" size="icon" onClick={() => signOut(auth)}><LogOut className="h-4 w-4" /></Button>
               </div>
@@ -189,7 +213,7 @@ export default function WorkspacePage() {
         </div>
       </header>
 
-      <main className="flex-1 container py-8 px-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="flex-1 container py-8 px-4 grid grid-cols-1 lg:grid-cols-3 gap-6 mx-auto">
         
         {/* Column 1: Confidential Source */}
         <section className="space-y-6">
@@ -203,7 +227,7 @@ export default function WorkspacePage() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 {SAMPLES.map(s => (
-                  <Button key={s.title} variant="secondary" size="xs" className="text-[10px] h-7" onClick={() => setRawText(s.text)}>
+                  <Button key={s.title} variant="secondary" size="sm" className="text-[10px] h-7" onClick={() => setRawText(s.text)}>
                     {s.title}
                   </Button>
                 ))}
@@ -216,7 +240,7 @@ export default function WorkspacePage() {
                   onChange={(e) => setRawText(e.target.value)}
                 />
                 <div className="absolute bottom-2 right-2 text-[10px] text-slate-500">
-                  {rawText.length} / 12,000 chars
+                  {rawText.length} chars
                 </div>
               </div>
 
@@ -242,7 +266,7 @@ export default function WorkspacePage() {
 
         {/* Column 2: Local Privacy Vault */}
         <section className="space-y-6">
-          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${redaction ? 'glow-emerald' : ''}`}>
+          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${redaction ? 'ring-1 ring-emerald-500/50' : ''}`}>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center justify-between">
                 2. Local Privacy Vault
@@ -263,12 +287,12 @@ export default function WorkspacePage() {
                       <div className="text-xs font-mono">{redaction.durationMs}ms</div>
                     </div>
                     <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                      <div className="text-[10px] text-slate-500 uppercase">Bytes Protected</div>
+                      <div className="text-[10px] text-slate-500 uppercase">Protected</div>
                       <div className="text-xs font-mono text-emerald-500">{redaction.bytesKeptLocal} B</div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 min-h-[150px] text-sm leading-relaxed whitespace-pre-wrap font-mono">
+                  <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 min-h-[150px] text-sm leading-relaxed whitespace-pre-wrap font-mono max-h-[300px] overflow-y-auto">
                     {redaction.sanitizedText.split(/(\[.*?\])/).map((part, i) => (
                       part.startsWith('[') ? <span key={i} className="bg-emerald-500/20 text-emerald-400 px-1 rounded border border-emerald-500/30 mx-0.5">{part}</span> : part
                     ))}
@@ -276,7 +300,7 @@ export default function WorkspacePage() {
 
                   <div className="space-y-2">
                     <div className="text-xs font-medium text-slate-400">Entities Identified ({redaction.entities.length})</div>
-                    <div className="max-h-[150px] overflow-y-auto space-y-1 pr-2">
+                    <div className="max-h-[150px] overflow-y-auto space-y-1 pr-2 scrollbar-thin">
                       {redaction.entities.map((e, i) => (
                         <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-950/50 border border-slate-800 text-[10px]">
                           <span className="text-slate-500 font-mono">{e.placeholder}</span>
@@ -294,7 +318,7 @@ export default function WorkspacePage() {
 
         {/* Column 3: Cloud Reasoning */}
         <section className="space-y-6">
-          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${cloudResult ? 'glow-indigo' : ''}`}>
+          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${cloudResult ? 'ring-1 ring-indigo-500/50' : ''}`}>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center justify-between">
                 3. Cloud Reasoning
@@ -324,9 +348,9 @@ export default function WorkspacePage() {
                     )}
                   </div>
                   
-                  <div className="flex-1 p-4 rounded-lg bg-slate-950 border border-slate-800 text-sm font-sans min-h-[250px]">
+                  <div className="flex-1 p-4 rounded-lg bg-slate-950 border border-slate-800 text-sm font-sans min-h-[250px] max-h-[400px] overflow-y-auto">
                     {!cloudResult ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50 italic text-xs">
+                      <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50 italic text-xs text-center pt-20">
                         {isLoading ? <div className="animate-pulse">Reasoning in progress...</div> : "Waiting for sanitized input"}
                       </div>
                     ) : (
@@ -355,7 +379,7 @@ export default function WorkspacePage() {
 
       {/* Audit History Slider/Bottom */}
       <footer className="border-t border-slate-800 bg-slate-950 p-4">
-        <div className="container px-4">
+        <div className="container px-4 mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
               <History className="h-3 w-3" /> Security Audit Logs (Local Context)
