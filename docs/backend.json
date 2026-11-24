@@ -1,0 +1,29 @@
+{
+  "entities": {
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Telemetry for AI tasks, strictly excluding raw PII.",
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "taskTitle": { "type": "string" },
+        "redactSource": { "type": "string", "enum": ["ON_DEVICE", "IN_CLOUD"] },
+        "reasonSource": { "type": "string", "enum": ["ON_DEVICE", "IN_CLOUD"] },
+        "entityCount": { "type": "number" },
+        "bytesKeptLocal": { "type": "number" },
+        "latencyMs": { "type": "number" },
+        "sanitizedPreview": { "type": "string", "description": "First 140 chars of redacted text only" }
+      },
+      "required": ["createdAt", "taskTitle", "redactSource", "reasonSource"]
+    }
+  },
+  "auth": {
+    "providers": ["google.com", "anonymous"]
+  },
+  "firestore": {
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": "#/backend/entities/AuditLog",
+      "description": "Secure audit trails for hybrid AI reasoning."
+    }
+  }
+}

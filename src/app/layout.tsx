@@ -4,8 +4,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from '@/components/theme-provider';
 
 export const metadata: Metadata = {
-  title: 'Gomezgani Shaba | Full-Stack Developer & Data Science Student',
-  description: 'Portfolio of Gomezgani Shaba, a full-stack developer and data science student focused on building secure, data-driven systems.',
+  title: 'CloakRelay | Zero-Leak Hybrid AI Workspace',
+  description: 'Secure, privacy-first workspace using on-device AI for PII redaction and cloud models for reasoning.',
 };
 
 export default function RootLayout({
@@ -14,19 +14,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+    <html lang="en" className="dark scroll-smooth" suppressHydrationWarning>
       <head>
         <meta name="google-site-verification" content="3H9PTBYIRCoc_j8lgKZo2QkLkEzyrnyN4wIqY-5c4D0" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased">
+      <body className="antialiased min-h-screen bg-slate-950 font-sans">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="dark"
+          enableSystem={false}
           disableTransitionOnChange
         >
           {children}

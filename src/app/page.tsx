@@ -1,306 +1,392 @@
-import Image from "next/image";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import { projects, skills } from "@/lib/data";
-import { PlaceHolderImages } from "@/lib/placeholder-images";
-import { ContactForm } from "@/components/contact-form";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { Header } from "@/components/header";
-import { Footer } from "@/components/footer";
-import { BrainCircuit, Database, Github, Linkedin, Mail, Phone, ShieldCheck } from "lucide-react";
+'use client';
 
-const HeroSection = () => {
-  const profileImage = PlaceHolderImages.find(p => p.id === 'profile-picture');
-  
-  return (
-    <section
-      className="w-full py-20 md:py-32 lg:py-40 bg-background"
-    >
-      <div className="container mx-auto px-4 md:px-6">
-        <div className="flex flex-col items-center space-y-6 text-center">
-          {profileImage && (
-            <Image
-              src={profileImage.imageUrl}
-              alt="Gomezgani Shaba"
-              width={160}
-              height={160}
-              className="rounded-full object-cover border-4 border-card shadow-lg"
-              data-ai-hint={profileImage.imageHint}
-              priority
-            />
-          )}
-          <div className="space-y-2">
-            <h1 className="font-headline text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl lg:text-7xl">
-              Gomezgani Shaba
-            </h1>
-            <p className="mx-auto max-w-[700px] text-muted-foreground md:text-xl">
-              A full-stack developer and data science student focused on building
-              secure, data-driven systems.
+import { useState, useEffect } from 'react';
+import { auth, remoteConfig } from '@/lib/firebase';
+import { signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { fetchAndActivate, getValue } from 'firebase/remote-config';
+import { detectAndRedactPII, runCloudReasoning, runOfflineLocalTask, RedactedEntity, RedactionResult } from '@/lib/cloak-engine';
+import { saveAuditLog, AuditLog, subscribeToAuditLogs } from '@/lib/firestore-audit';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ShieldCheck, Cloud, Zap, History, LogOut, Globe, Cpu, AlertTriangle, Copy, Trash2, CheckCircle2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+const SAMPLES = [
+  {
+    title: "Clinical Handoff",
+    text: "Patient: John Doe (SSN: 444-00-1234). Admitted to St. Jude Hospital. Email: j.doe@gmail.com. Symptoms: Severe abdominal pain since 8 AM."
+  },
+  {
+    title: "Legal NDA",
+    text: "Founders Alice Vance and Bob Smith agree to an acquisition price of $50,000,000 by TechCorp Inc. Wire info: Chase Bank Acct 99283741."
+  },
+  {
+    title: "Security Incident",
+    text: "Engineer Sarah reported sk-live-51Mz2fW2s exposed in log. Internal IP 10.0.1.45 accessed from johnd@corp.com at midnight."
+  }
+];
+
+export default function WorkspacePage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [rawText, setRawText] = useState("");
+  const [isStrict, setStrict] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
+  const [redaction, setRedaction] = useState<RedactionResult | null>(null);
+  const [cloudResult, setCloudResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [nanoStatus, setNanoStatus] = useState<string>("probing...");
+  const { toast } = useToast();
+
+  useEffect(() => {
+    onAuthStateChanged(auth, (u) => setUser(u));
+    
+    setIsOnline(navigator.onLine);
+    window.addEventListener('online', () => setIsOnline(true));
+    window.addEventListener('offline', () => setIsOnline(false));
+
+    if (remoteConfig) {
+      fetchAndActivate(remoteConfig).catch(console.error);
+    }
+
+    // Probe Nano
+    const checkNano = async () => {
+      const lm = (window as any).ai?.languageModel;
+      if (!lm) {
+        setNanoStatus("Not Available");
+        return;
+      }
+      try {
+        const capabilities = await lm.capabilities();
+        setNanoStatus(capabilities.available === "readily" ? "Ready" : "Downloadable");
+      } catch {
+        setNanoStatus("Unavailable");
+      }
+    };
+    checkNano();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      return subscribeToAuditLogs(setAuditLogs);
+    }
+  }, [user]);
+
+  const handleRedact = async () => {
+    if (!rawText) return;
+    setIsLoading(true);
+    try {
+      const fallback = remoteConfig ? getValue(remoteConfig, 'cloud_fallback_model').asString() : "gemini-3.5-flash-lite";
+      const result = await detectAndRedactPII(rawText, { strictOnDevice: isStrict, fallbackModel: fallback });
+      setRedaction(result);
+      toast({ title: "Local Scan Complete", description: `${result.entities.length} entities cloaked.` });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Redaction Error", description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCloudTask = async (task: string) => {
+    if (!redaction) return;
+    setIsLoading(true);
+    try {
+      const model = remoteConfig ? getValue(remoteConfig, 'cloud_reasoning_model').asString() : "gemini-3.8-flash";
+      const result = await runCloudReasoning(redaction.sanitizedText, task, redaction.entities, model);
+      setCloudResult(result);
+      
+      await saveAuditLog({
+        taskTitle: task,
+        redactSource: redaction.inferenceSource,
+        reasonSource: result.inferenceSource,
+        entityCount: redaction.entities.length,
+        bytesKeptLocal: redaction.bytesKeptLocal,
+        latencyMs: result.durationMs,
+        sanitizedPreview: redaction.sanitizedText.substring(0, 140)
+      });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Cloud AI Error", description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOfflineTask = async () => {
+    setIsLoading(true);
+    try {
+      const fallback = remoteConfig ? getValue(remoteConfig, 'cloud_fallback_model').asString() : "gemini-3.5-flash-lite";
+      const result = await runOfflineLocalTask(rawText, "Summarize this securely", fallback);
+      toast({ title: "Offline Summary Complete", description: "All logic ran locally." });
+      setCloudResult({ rehydratedResponse: result.response, inferenceSource: result.inferenceSource, modelUsed: "local-nano", durationMs: result.durationMs });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Local AI Error", description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!import.meta.env.VITE_FIREBASE_API_KEY) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <Card className="max-w-md border-amber-500/50 bg-amber-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-500">
+              <AlertTriangle /> Firebase Config Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-amber-200/70">
+              CloakRelay requires Firebase environment variables to initialize. Please copy <code className="bg-amber-900/40 px-1">.env.example</code> to <code className="bg-amber-900/40 px-1">.env.local</code> and fill in your project credentials.
             </p>
-          </div>
-          <div className="space-x-4">
-            <Button asChild>
-              <Link href="#projects">View My Work</Link>
-            </Button>
-            <Button variant="secondary" asChild>
-              <Link href="#contact">Get in Touch</Link>
-            </Button>
-          </div>
-        </div>
+            <div className="text-xs font-mono bg-black/40 p-3 rounded overflow-x-auto text-amber-500">
+              VITE_FIREBASE_API_KEY=your_key<br/>
+              VITE_FIREBASE_PROJECT_ID=your_id
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </section>
-  );
-}
-
-const AboutSection = () => (
-  <section id="about" className="w-full py-16 md:py-24 bg-background">
-    <div className="container mx-auto px-4 md:px-6">
-      <div className="max-w-5xl mx-auto text-center">
-        <h2 className="text-3xl font-bold font-headline tracking-tighter sm:text-4xl md:text-5xl mb-12">
-          Building Bridges Between Data and Design
-        </h2>
-        <div className="grid gap-8 md:grid-cols-3">
-          <Card>
-            <CardHeader className="items-center text-center">
-              <Database className="w-12 h-12 mb-4 text-accent" />
-              <CardTitle>End-to-End System Design</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                I architect practical, data-driven systems from the ground up, focusing on the entire application lifecycle—from secure backends to responsive frontends.
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="items-center text-center">
-              <BrainCircuit className="w-12 h-12 mb-4 text-accent" />
-              <CardTitle>Intelligent Application Features</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                I leverage data science to build intelligent features, applying ML for tasks like transaction classification and creating insightful data simulations.
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="items-center text-center">
-              <ShieldCheck className="w-12 h-12 mb-4 text-accent" />
-              <CardTitle>Secure & Scalable Platforms</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                I am passionate about creating reliable software for critical sectors like finance and education, building systems that manage sensitive data with trust and security.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
-  </section>
-);
-
-const ProjectsSection = () => {
-  const projectImages = PlaceHolderImages;
+    );
+  }
 
   return (
-    <section id="projects" className="w-full py-16 md:py-24 bg-secondary/50">
-      <div className="container mx-auto px-4 md:px-6">
-        <div className="flex flex-col items-center justify-center space-y-4 text-center mb-12">
-          <div className="space-y-2">
-            <h2 className="text-3xl font-bold font-headline tracking-tighter sm:text-5xl">
-              Selected Projects
-            </h2>
-            <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-              Here are some of the projects I've worked on, showcasing my skills in development and problem-solving.
-            </p>
+    <div className="flex flex-col min-h-screen text-slate-200">
+      {/* Telemetry Header */}
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+        <div className="container flex h-16 items-center justify-between px-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
+              <ShieldCheck className="text-accent h-6 w-6" />
+              <span className="text-white">Cloak<span className="text-accent">Relay</span></span>
+            </div>
+            <div className="hidden md:flex items-center gap-2 px-4 border-l border-slate-800 ml-4">
+              <Badge variant="outline" className={`gap-1 ${nanoStatus === 'Ready' ? 'border-emerald-500 text-emerald-500' : 'text-slate-500'}`}>
+                <Cpu className="h-3 w-3" /> {nanoStatus === 'Ready' ? 'Gemini Nano Ready' : nanoStatus}
+              </Badge>
+              <Badge variant="outline" className={`gap-1 ${isOnline ? 'border-blue-500 text-blue-500' : 'border-amber-500 text-amber-500'}`}>
+                <Globe className="h-3 w-3" /> {isOnline ? 'Online' : 'Offline Mode'}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {!user ? (
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => signInAnonymously(auth)}>Guest</Button>
+                <Button size="sm" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>Sign In</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400 hidden lg:inline">{user.email || 'Guest Session'}</span>
+                <Button variant="ghost" size="icon" onClick={() => signOut(auth)}><LogOut className="h-4 w-4" /></Button>
+              </div>
+            )}
           </div>
         </div>
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project, index) => {
-            const projectImage = projectImages.find(p => p.id === project.imageId);
-            return (
-              <Card key={index} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle>{project.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col flex-grow">
-                  {projectImage && (
-                     <div className="mb-4 overflow-hidden rounded-lg">
-                      <Image
-                        src={projectImage.imageUrl}
-                        alt={project.title}
-                        width={800}
-                        height={600}
-                        className="aspect-[4/3] object-cover transition-transform duration-300 hover:scale-105"
-                        data-ai-hint={projectImage.imageHint}
-                      />
-                     </div>
-                  )}
-                  <CardDescription className="mb-4">{project.problemStatement}</CardDescription>
-                  <div className="mt-auto">
-                    <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value="tech-stack">
-                        <AccordionTrigger>Technology Stack</AccordionTrigger>
-                        <AccordionContent>
-                          <div className="flex flex-wrap gap-2">
-                            {project.technologyStack.map((tech, i) => (
-                              <Badge key={i} variant="secondary">
-                                {tech}
-                              </Badge>
-                            ))}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                      <AccordionItem value="architecture">
-                        <AccordionTrigger>System Architecture</AccordionTrigger>
-                        <AccordionContent>
-                          {project.systemArchitecture}
-                        </AccordionContent>
-                      </AccordionItem>
-                      <AccordionItem value="lessons-learned">
-                        <AccordionTrigger>Key Lessons Learned</AccordionTrigger>
-                        <AccordionContent>
-                          {project.lessonsLearned}
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-};
+      </header>
 
-
-const SkillsSection = () => (
-  <section id="skills" className="w-full py-16 md:py-24 bg-background">
-    <div className="container mx-auto px-4 md:px-6">
-      <div className="flex flex-col items-center justify-center space-y-4 text-center mb-12">
-        <div className="space-y-2">
-          <h2 className="text-3xl font-bold font-headline tracking-tighter sm:text-5xl">
-            Technical Skills
-          </h2>
-          <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-            A snapshot of the languages, frameworks, and tools I use to bring ideas to life.
-          </p>
-        </div>
-      </div>
-      <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {Object.entries(skills).map(([category, skillList]) => (
-          <Card key={category}>
+      <main className="flex-1 container py-8 px-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Column 1: Confidential Source */}
+        <section className="space-y-6">
+          <Card className="border-slate-800 bg-slate-900/40">
             <CardHeader>
-              <CardTitle className="text-lg">{category}</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                1. Confidential Source
+                <span className="text-[10px] uppercase tracking-widest text-slate-500">Inputs</span>
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                {skillList.map((skill, index) => (
-                  <Badge key={index} variant="outline">
-                    {skill}
-                  </Badge>
+                {SAMPLES.map(s => (
+                  <Button key={s.title} variant="secondary" size="xs" className="text-[10px] h-7" onClick={() => setRawText(s.text)}>
+                    {s.title}
+                  </Button>
                 ))}
               </div>
+              <div className="relative">
+                <Textarea 
+                  placeholder="Paste sensitive data here..." 
+                  className="min-h-[250px] bg-slate-950 border-slate-800 focus:border-accent resize-none font-mono text-sm"
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                />
+                <div className="absolute bottom-2 right-2 text-[10px] text-slate-500">
+                  {rawText.length} / 12,000 chars
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-medium">Strict On-Device Shield</div>
+                  <div className="text-[10px] text-slate-500">Redaction MUST happen on-device</div>
+                </div>
+                <Switch checked={isStrict} onCheckedChange={setStrict} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={handleRedact} disabled={isLoading || !rawText} className="bg-accent hover:bg-accent/90 text-white">
+                  <Zap className="h-4 w-4 mr-2" /> Scan & Cloak
+                </Button>
+                <Button variant="outline" onClick={handleOfflineTask} disabled={isLoading || !rawText}>
+                  Offline Summary
+                </Button>
+              </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
-    </div>
-  </section>
-);
+        </section>
 
+        {/* Column 2: Local Privacy Vault */}
+        <section className="space-y-6">
+          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${redaction ? 'glow-emerald' : ''}`}>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                2. Local Privacy Vault
+                {redaction && <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">{redaction.inferenceSource}</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!redaction ? (
+                <div className="h-[250px] flex flex-col items-center justify-center text-slate-600 border-2 border-dashed border-slate-800 rounded-lg">
+                  <ShieldCheck className="h-8 w-8 mb-2 opacity-20" />
+                  <p className="text-xs">No active scan</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div className="p-2 rounded bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-500 uppercase">Latency</div>
+                      <div className="text-xs font-mono">{redaction.durationMs}ms</div>
+                    </div>
+                    <div className="p-2 rounded bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-500 uppercase">Bytes Protected</div>
+                      <div className="text-xs font-mono text-emerald-500">{redaction.bytesKeptLocal} B</div>
+                    </div>
+                  </div>
 
-const ContactSection = () => (
-  <section id="contact" className="w-full py-16 md:py-24 bg-secondary/50">
-    <div className="container mx-auto px-4 md:px-6">
-      <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
-        <div className="flex flex-col justify-center space-y-8">
-          <div className="space-y-2">
-            <h2 className="text-3xl font-bold font-headline tracking-tighter sm:text-5xl">
-              Get in Touch
-            </h2>
-            <p className="max-w-[600px] text-muted-foreground md:text-xl/relaxed">
-              Have a project in mind, a question, or just want to connect? Feel
-              free to reach out. I'm always open to new opportunities and
-              collaborations.
-            </p>
-          </div>
-          <div className="space-y-4 text-lg">
-            <a
-              href="mailto:gomezgani60@gmail.com"
-              className="flex items-center gap-4 group"
-            >
-              <Mail className="h-6 w-6 text-accent" />
-              <span className="text-muted-foreground group-hover:text-foreground">
-                gomezgani60@gmail.com
-              </span>
-            </a>
-            <div className="flex items-center gap-4">
-              <Phone className="h-6 w-6 text-accent" />
-              <div className="text-muted-foreground">
-                <span>+265 986 076 400</span> / <span>+265 887 275 041</span>
+                  <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 min-h-[150px] text-sm leading-relaxed whitespace-pre-wrap font-mono">
+                    {redaction.sanitizedText.split(/(\[.*?\])/).map((part, i) => (
+                      part.startsWith('[') ? <span key={i} className="bg-emerald-500/20 text-emerald-400 px-1 rounded border border-emerald-500/30 mx-0.5">{part}</span> : part
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-slate-400">Entities Identified ({redaction.entities.length})</div>
+                    <div className="max-h-[150px] overflow-y-auto space-y-1 pr-2">
+                      {redaction.entities.map((e, i) => (
+                        <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-950/50 border border-slate-800 text-[10px]">
+                          <span className="text-slate-500 font-mono">{e.placeholder}</span>
+                          <span className="truncate max-w-[80px] text-slate-300">{e.original}</span>
+                          <Badge variant="outline" className="text-[8px] h-4">{e.category}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Column 3: Cloud Reasoning */}
+        <section className="space-y-6">
+          <Card className={`border-slate-800 bg-slate-900/40 transition-all ${cloudResult ? 'glow-indigo' : ''}`}>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                3. Cloud Reasoning
+                {cloudResult && <Badge className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20">{cloudResult.inferenceSource}</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                {["Executive Brief", "Risk Audit", "Action Items", "Reply Draft"].map(task => (
+                  <Button key={task} variant="outline" size="sm" className="text-[10px]" disabled={!redaction || isLoading} onClick={() => handleCloudTask(task)}>
+                    {task}
+                  </Button>
+                ))}
               </div>
-            </div>
-            <a
-              href="https://github.com/gomeShaba"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-4 group"
-            >
-              <Github className="h-6 w-6 text-accent" />
-              <span className="text-muted-foreground group-hover:text-foreground">
-                github.com/gomeShaba
-              </span>
-            </a>
-            <a
-              href="https://www.linkedin.com/in/gomezgani-s-27aa93247"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-4 group"
-            >
-              <Linkedin className="h-6 w-6 text-accent" />
-              <span className="text-muted-foreground group-hover:text-foreground">
-                linkedin.com/in/gomezgani-s-27aa93247
-              </span>
-            </a>
+
+              <div className="min-h-[300px] flex flex-col">
+                <Tabs defaultValue="rehydrated" className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <TabsList className="bg-slate-950 border border-slate-800">
+                      <TabsTrigger value="rehydrated" className="text-[10px]">Local Output</TabsTrigger>
+                      <TabsTrigger value="sanitized" className="text-[10px]">Cloud View</TabsTrigger>
+                    </TabsList>
+                    {cloudResult && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigator.clipboard.writeText(cloudResult.rehydratedResponse)}>
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  
+                  <div className="flex-1 p-4 rounded-lg bg-slate-950 border border-slate-800 text-sm font-sans min-h-[250px]">
+                    {!cloudResult ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50 italic text-xs">
+                        {isLoading ? <div className="animate-pulse">Reasoning in progress...</div> : "Waiting for sanitized input"}
+                      </div>
+                    ) : (
+                      <>
+                        <TabsContent value="rehydrated" className="m-0 whitespace-pre-wrap">
+                          {cloudResult.rehydratedResponse}
+                        </TabsContent>
+                        <TabsContent value="sanitized" className="m-0 whitespace-pre-wrap font-mono text-xs text-slate-400">
+                          {cloudResult.sanitizedResponse}
+                        </TabsContent>
+                      </>
+                    )}
+                  </div>
+                </Tabs>
+                {cloudResult && (
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                    <span>Model: {cloudResult.modelUsed}</span>
+                    <span>{cloudResult.durationMs}ms</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+
+      {/* Audit History Slider/Bottom */}
+      <footer className="border-t border-slate-800 bg-slate-950 p-4">
+        <div className="container px-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+              <History className="h-3 w-3" /> Security Audit Logs (Local Context)
+            </h3>
+            <span className="text-[10px] text-slate-600">Syncing with Firestore ({auditLogs.length})</span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {auditLogs.slice(0, 4).map(log => (
+              <div key={log.id} className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div className="text-xs font-medium truncate">{log.taskTitle}</div>
+                  <Badge variant="outline" className="text-[8px] px-1 h-3">{log.reasonSource}</Badge>
+                </div>
+                <div className="text-[10px] text-slate-500 truncate italic">
+                  "{log.sanitizedPreview}..."
+                </div>
+                <div className="flex justify-between text-[8px] text-slate-400 uppercase font-mono">
+                  <span>{log.entityCount} Entities</span>
+                  <span>{log.latencyMs}ms</span>
+                </div>
+              </div>
+            ))}
+            {auditLogs.length === 0 && (
+              <div className="col-span-full py-8 text-center text-xs text-slate-600 italic">
+                Securely store audit trails without raw PII
+              </div>
+            )}
           </div>
         </div>
-        <div className="mx-auto w-full max-w-lg">
-          <ContactForm />
-        </div>
-      </div>
-    </div>
-  </section>
-);
-
-
-export default function Home() {
-  return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
-      <main className="flex-1">
-        <HeroSection />
-        <AboutSection />
-        <ProjectsSection />
-        <SkillsSection />
-        <ContactSection />
-      </main>
-      <Footer />
+      </footer>
     </div>
   );
 }
