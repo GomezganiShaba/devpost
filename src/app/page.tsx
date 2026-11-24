@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { auth, remoteConfig } from '@/lib/firebase';
+import { auth, remoteConfig, db } from '@/lib/firebase';
 import { signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { fetchAndActivate, getValue } from 'firebase/remote-config';
 import { detectAndRedactPII, runCloudReasoning, runOfflineLocalTask, RedactedEntity, RedactionResult } from '@/lib/cloak-engine';
@@ -44,7 +44,11 @@ export default function WorkspacePage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    onAuthStateChanged(auth, (u) => setUser(u));
+    let unsubscribeAuth: (() => void) | undefined;
+    
+    if (auth) {
+      unsubscribeAuth = onAuthStateChanged(auth, (u) => setUser(u));
+    }
     
     setIsOnline(navigator.onLine);
     const handleOnline = () => setIsOnline(true);
@@ -56,7 +60,6 @@ export default function WorkspacePage() {
       fetchAndActivate(remoteConfig).catch(() => {});
     }
 
-    // Probe Nano
     const checkNano = async () => {
       const lm = (window as any).ai?.languageModel;
       if (!lm) {
@@ -75,11 +78,12 @@ export default function WorkspacePage() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (unsubscribeAuth) unsubscribeAuth();
     };
   }, []);
 
   useEffect(() => {
-    if (user) {
+    if (user && auth && db) {
       return subscribeToAuditLogs(setAuditLogs);
     }
   }, [user]);
@@ -192,13 +196,12 @@ export default function WorkspacePage() {
           <div className="flex items-center gap-3">
             {!user ? (
               <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => signInAnonymously(auth)}>Guest</Button>
-                <Button size="sm" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-accent hover:bg-accent/90 text-white">Sign In</Button>
+                <Button variant="ghost" size="sm" onClick={() => auth && signInAnonymously(auth)}>Guest</Button>
+                <Button size="sm" onClick={() => auth && signInWithPopup(auth, new GoogleAuthProvider())} className="bg-accent hover:bg-accent/90 text-white">Sign In</Button>
               </div>
             ) : (
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-full overflow-hidden border border-slate-800 bg-slate-900 flex items-center justify-center relative">
-                  {/* Using standard img tag to bypass next/image domain restrictions for dynamic avatar URLs */}
                   <img 
                     src={user.photoURL || "https://picsum.photos/seed/avatar/32/32"} 
                     alt="Profile" 
@@ -206,7 +209,7 @@ export default function WorkspacePage() {
                   />
                 </div>
                 <span className="text-xs text-slate-400 hidden lg:inline">{user.email || 'Guest Session'}</span>
-                <Button variant="ghost" size="icon" onClick={() => signOut(auth)}><LogOut className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="icon" onClick={() => auth && signOut(auth)}><LogOut className="h-4 w-4" /></Button>
               </div>
             )}
           </div>

@@ -16,6 +16,7 @@ export interface AuditLog {
 }
 
 export async function saveAuditLog(log: Omit<AuditLog, 'createdAt' | 'id'>) {
+  if (!auth || !db) return;
   const user = auth.currentUser;
   if (!user) return;
 
@@ -27,6 +28,7 @@ export async function saveAuditLog(log: Omit<AuditLog, 'createdAt' | 'id'>) {
 }
 
 export function subscribeToAuditLogs(callback: (logs: AuditLog[]) => void) {
+  if (!auth || !db) return () => {};
   const user = auth.currentUser;
   if (!user) return () => {};
 

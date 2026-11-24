@@ -47,8 +47,8 @@ export async function detectAndRedactPII(
   rawText: string, 
   options: { strictOnDevice: boolean; fallbackModel: string }
 ): Promise<RedactionResult> {
+  if (!ai) throw new Error("Firebase AI not initialized. Check configuration.");
   const start = performance.now();
-  // Using string literals for InferenceMode to avoid export issues
   const inferenceMode = options.strictOnDevice ? "ONLY_ON_DEVICE" : "PREFER_ON_DEVICE";
   
   const model = getGenerativeModel(ai, {
@@ -126,6 +126,7 @@ export async function runCloudReasoning(
   entities: RedactedEntity[],
   cloudModelName: string
 ) {
+  if (!ai) throw new Error("Firebase AI not initialized.");
   const start = performance.now();
   const model = getGenerativeModel(ai, {
     model: cloudModelName,
@@ -161,6 +162,7 @@ export async function runOfflineLocalTask(
   taskInstruction: string,
   fallbackModel: string
 ) {
+  if (!ai) throw new Error("Firebase AI not initialized.");
   const start = performance.now();
   const model = getGenerativeModel(ai, {
     model: fallbackModel,
